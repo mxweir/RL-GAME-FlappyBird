@@ -1,6 +1,2 @@
 numpy==1.24.2
 pygame==2.1.2
-threading==0.1.0
-ttkbootstrap==1.6.0
-collections==0.2
-pickle-mixin==1.0

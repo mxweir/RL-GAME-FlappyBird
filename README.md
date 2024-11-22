@@ -1,83 +1,63 @@
-# 2048 Game with Reinforcement Learning Agent
+# Flappy Bird Reinforcement Learning Project
 
-## Overview
-This project is an implementation of the popular game 2048, featuring a reinforcement learning agent that can automatically learn to play and improve its performance. The game can be played manually or with the AI agent, which utilizes Q-learning to achieve higher scores. The interface combines both Tkinter for model management and Pygame for the game display.
+This project is an implementation of the classic Flappy Bird game with an AI agent using Q-Learning. The agent learns how to play Flappy Bird through reinforcement learning by adjusting its actions based on rewards and penalties.
 
-## Features
-- **Manual Play**: Play the game 2048 manually using arrow keys.
-- **Reinforcement Learning Agent**: The agent learns to play the game using the Q-learning algorithm.
-- **GUI for Model Management**: Manage training models (create, load, or save) using a modern Tkinter GUI.
-- **Visual Feedback**: Real-time visualization of the agent's progress, including cumulative rewards, moves made, and current score.
-- **Custom Window Icon**: Custom icons have been added for the window, enhancing the visual experience.
+## Project Structure
 
-## Installation
-### Requirements
-To run the project, you need the following dependencies:
+- **agent.py**: Contains the implementation of the Q-Learning agent that makes decisions based on a Q-table. The agent learns through exploration and exploitation and adjusts its Q-values using rewards for navigating the bird through the gaps between pipes.
+- **main.py**: The main game loop where the Flappy Bird game is run. It manages the game flow, interactions between the bird, pipes, and agent, and tracks the score.
+- **game.py**: Contains the classes for the Bird and Pipe, as well as the collision detection. This file defines how the bird moves and interacts with the pipes.
+- **graphics.py**: Handles the visual rendering of the game, including the bird, pipes, score, and game over screens.
 
-- Python 3.8+
-- `pygame==2.1.2`
-- `numpy==1.24.2`
-- `ttkbootstrap==1.6.0`
-- `pickle-mixin==1.0`
+## How It Works
 
-To install the requirements, run:
-```bash
-pip install -r requirements.txt
+The AI agent is trained using a Q-Learning algorithm without neural networks. The agent learns to navigate the bird through gaps by updating a Q-table based on state transitions. The state of the game is discretized into a manageable number of possible states that represent the bird's position, the distance to the next pipe, and the position of the gap.
+
+### Reward Structure
+
+- **Staying Alive**: The agent receives a small positive reward for each step it stays alive.
+- **Moving Towards the Gap**: The agent is rewarded more when it moves towards and stays in the center of the gap between the pipes.
+- **Passing Pipes**: A significant positive reward is given for successfully passing through a pipe.
+- **Collisions**: The agent receives a large negative reward when it collides with a pipe or goes out of bounds, encouraging it to avoid such actions.
+- **Position Relative to Gap**: The agent receives extra rewards based on its position relative to the gap center, to encourage it to align itself properly for passing through.
+
+### Saving Progress
+
+The Q-Learning agent periodically saves its Q-table to ensure that learning progress is not lost. The model is saved every 25 rounds, allowing the agent to pick up learning from where it left off.
+
+## Requirements
+
+- Python 3.x
+- Pygame
+- NumPy
+
+Install the requirements using:
+
+```
+pip install pygame numpy
 ```
 
-## How to Run
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/your_username/2048-rl-agent.git
-   cd 2048-rl-agent
-   ```
+## Running the Game
 
-2. Install the dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+To run the game, simply execute the `main.py` file:
 
-3. Run the game:
-   ```bash
-   python main.py
-   ```
+```
+python main.py
+```
 
-## Usage
-- **Manual Mode**: Use the arrow keys (`UP`, `DOWN`, `LEFT`, `RIGHT`) to move the tiles manually.
-- **Agent Mode**: Press `A` to toggle the agent. The agent will start learning and playing automatically.
-- **Restart Game**: If the game is over, press `R` to restart.
-- **Model Management**:
-  - A GUI will appear at the beginning to load or create a new model.
-  - Use sliders to adjust the `epsilon` parameter while creating new models.
-
-## File Structure
-- `main.py`: The entry point of the project that initializes the game and manages agent training.
-- `agent.py`: Contains the Q-learning logic for the reinforcement learning agent.
-- `game.py`: Handles the game logic for 2048, including board updates and score calculation.
-- `graphics.py`: Manages the graphical interface for the game, including drawing the board and agent information.
-- `utils/favicon.ico`: Custom icon used for both the Pygame and Tkinter windows.
-
-## Agent Training Details
-The Q-learning agent uses an epsilon-greedy approach to balance exploration and exploitation. You can dynamically adjust the `epsilon` value using the GUI when creating new models, which helps fine-tune the learning process.
-
-The agent saves the learned `Q-table` automatically after every game over, allowing future reuse and continuous improvement.
+The game will start, and the AI agent will begin playing automatically. The Q-table will be saved periodically, and you can also manually load it to resume training from a previous point.
 
 ## Future Improvements
-- **Deep Q-Learning**: Upgrade the agent to use a neural network for approximating Q-values.
-- **Enhanced GUI**: Improve the interface to provide better feedback on agent performance.
-- **Optimized Training**: Add more advanced training techniques like experience replay or prioritized sampling.
 
-## License
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-- The game is inspired by the classic 2048 game created by Gabriele Cirulli.
-- Reinforcement learning concepts were applied to automate the gameplay and improve performance over time.
+- **Deep Reinforcement Learning**: Replacing the Q-Learning agent with a Deep Q-Network (DQN) to handle larger state spaces more effectively.
+- **Improved State Representation**: Use a more continuous state representation to improve the agent's decision-making ability.
+- **Hyperparameter Tuning**: Experiment with different learning rates, discount factors, and exploration strategies to further improve the performance of the agent.
 
 ## Contributions
-Contributions are welcome! Please open an issue or submit a pull request for any improvements or suggestions.
 
-If you have any questions or feedback, feel free to reach out.
+Feel free to fork this repository and submit pull requests with improvements or bug fixes. Contributions are welcome!
 
-Happy Coding!
+## License
+
+This project is open-source and available under the MIT License.
 
