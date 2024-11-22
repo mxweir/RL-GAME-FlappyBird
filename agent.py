@@ -28,7 +28,7 @@ class QLearningAgent:
         if self.exploration_rate > self.exploration_min:
             self.exploration_rate *= self.exploration_decay
 
-    def update_reward(self, state, action, bird_y, pipes, game_over):
+    def update_reward(self, state, action, bird_y, pipes, game_over, score):
         reward = 0
         pipe_x = pipes[0].x
         pipe_gap_y_start = pipes[0].height
@@ -56,6 +56,9 @@ class QLearningAgent:
             reward += 10  # Reward for staying above the center of the gap
         else:
             reward += 5  # Smaller reward for staying below the center of the gap
+
+        # Additional reward for achieving a higher score
+        reward += score * 100  # Higher score yields a proportionally higher reward
 
         return reward
 
