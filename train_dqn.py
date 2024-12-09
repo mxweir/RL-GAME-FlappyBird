@@ -1,5 +1,6 @@
 # train_dqn.py
 import os
+import pickle
 import matplotlib.pyplot as plt
 from flappy_bird_env import FlappyBirdEnv
 from dqn_agent import DQNAgent
@@ -19,8 +20,11 @@ def train():
 
     agent = DQNAgent(state_dim, action_dim)
 
-    # Überprüfe, ob ein gespeichertes Modell existiert und lade es
+    # Pfade für gespeichertes Modell und Replay-Puffer
     model_path = 'dqn_flappy_bird.pth' if torch.cuda.is_available() else 'dqn_flappy_bird_cpu.pth'
+    memory_path = 'replay_buffer.pkl'
+
+    # Überprüfe, ob ein gespeichertes Modell existiert und lade es
     if os.path.exists(model_path):
         try:
             agent.policy_net.load_state_dict(torch.load(model_path, map_location=agent.device))
@@ -30,6 +34,17 @@ def train():
             logger.error(f"Fehler beim Laden des Modells: {e}")
     else:
         logger.info("Kein gespeichertes Modell gefunden. Starte mit einem neuen Modell.")
+
+    # Überprüfe, ob ein gespeicherter Replay-Puffer existiert und lade ihn
+    if os.path.exists(memory_path):
+        try:
+            with open(memory_path, 'rb') as f:
+                agent.memory = pickle.load(f)
+            logger.info(f"Replay-Puffer erfolgreich geladen von {memory_path}")
+        except Exception as e:
+            logger.error(f"Fehler beim Laden des Replay-Puffers: {e}")
+    else:
+        logger.info("Kein gespeicherter Replay-Puffer gefunden. Starte mit einem leeren Puffer.")
 
     num_episodes = 1000
     max_steps = 1000
@@ -115,15 +130,19 @@ def train():
     else:
         logger.warning("Keine Verluste vorhanden, um sie zu plotten.")
 
-    # Speichere das trainierte Modell, falls vorhanden
+    # Speichere das trainierte Modell und den Replay-Puffer
     try:
         if torch.cuda.is_available():
             torch.save(agent.policy_net.state_dict(), 'dqn_flappy_bird.pth')
         else:
             torch.save(agent.policy_net.state_dict(), 'dqn_flappy_bird_cpu.pth')
-        logger.info("Training abgeschlossen und Modell gespeichert.")
+        logger.info(f"Modell erfolgreich gespeichert unter {model_path}")
+
+        with open(memory_path, 'wb') as f:
+            pickle.dump(agent.memory, f)
+        logger.info(f"Replay-Puffer erfolgreich gespeichert unter {memory_path}")
     except Exception as e:
-        logger.error(f"Fehler beim Speichern des Modells: {e}")
+        logger.error(f"Fehler beim Speichern des Modells oder Replay-Puffers: {e}")
 
     # Optional: Visualisiere einige Episoden nach dem Training
     # Aktiviert das Rendern, um den Agenten zu beobachten
