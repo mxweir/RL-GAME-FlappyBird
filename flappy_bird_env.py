@@ -4,6 +4,7 @@ import gym
 from gym import spaces
 import numpy as np
 import random
+import time
 
 # Initialisiere pygame
 pygame.init()
@@ -48,7 +49,33 @@ class FlappyBirdEnv(gym.Env):
             dtype=np.float32
         )
 
+        # Lade Grafiken
+        self.load_graphics()
+
         self.reset()
+
+    def load_graphics(self):
+        # Pfad zu den Grafiken
+        try:
+            self.background_img = pygame.image.load('assets/background.png').convert()
+            self.background_img = pygame.transform.scale(self.background_img, (SCREEN_WIDTH, SCREEN_HEIGHT))
+
+            self.bird_imgs = [
+                pygame.image.load('assets/bird1.png').convert_alpha(),
+                pygame.image.load('assets/bird2.png').convert_alpha(),
+                pygame.image.load('assets/bird3.png').convert_alpha()
+            ]
+            self.bird_index = 0
+            self.bird_animation_time = 0.1  # Sekunden zwischen Frames
+
+            self.pipe_img = pygame.image.load('assets/pipe.png').convert_alpha()
+            self.pipe_img = pygame.transform.scale(self.pipe_img, (PIPE_WIDTH, SCREEN_HEIGHT))
+
+            self.ground_img = pygame.image.load('assets/ground.png').convert()
+            self.ground_img = pygame.transform.scale(self.ground_img, (SCREEN_WIDTH, 100))  # Beispielgröße
+        except pygame.error as e:
+            print(f"Fehler beim Laden der Grafiken: {e}")
+            exit()
 
     def reset(self):
         self.bird_y = SCREEN_HEIGHT / 2
@@ -90,17 +117,20 @@ class FlappyBirdEnv(gym.Env):
         self.done = False
 
         # Kollision mit Boden oder Decke
-        if self.bird_y <= 0 or self.bird_y >= SCREEN_HEIGHT:
+        if self.bird_y <= 0 or self.bird_y >= SCREEN_HEIGHT - self.ground_img.get_height():
             self.done = True
             reward = -10  # Bestrafung bei Tod
 
         # Kollision mit Pipes und Scoring
         for pipe in self.pipes:
             # Überprüfe Kollision mit der Pipe
-            if pipe['x'] < 60 < pipe['x'] + PIPE_WIDTH:
-                if not (pipe['height'] < self.bird_y < pipe['height'] + PIPE_GAP):
-                    self.done = True
-                    reward = -10  # Bestrafung bei Kollision
+            bird_rect = pygame.Rect(60 - 10, int(self.bird_y) - 10, 20, 20)  # Annahme: Vogelgröße 20x20
+            top_pipe_rect = pygame.Rect(pipe['x'], pipe['height'] - self.pipe_img.get_height(), PIPE_WIDTH, self.pipe_img.get_height())
+            bottom_pipe_rect = pygame.Rect(pipe['x'], pipe['height'] + PIPE_GAP, PIPE_WIDTH, self.pipe_img.get_height())
+
+            if bird_rect.colliderect(top_pipe_rect) or bird_rect.colliderect(bottom_pipe_rect):
+                self.done = True
+                reward = -10  # Bestrafung bei Kollision
 
             # Überprüfe, ob Pipe erfolgreich passiert wurde
             if not pipe['passed'] and pipe['x'] + PIPE_WIDTH < 60:
@@ -116,10 +146,9 @@ class FlappyBirdEnv(gym.Env):
             next_pipe = self.get_next_pipe()
             if next_pipe:
                 pipe_gap_center = next_pipe['height'] + PIPE_GAP / 2
-                distance_to_gap_center = (pipe_gap_center - self.bird_y)
+                distance_to_gap_center = abs(pipe_gap_center - self.bird_y)
                 # Normalisierte Distanz, kleinere Distanz erhält höhere Belohnung
-                distance_to_gap_center_norm = distance_to_gap_center / (SCREEN_HEIGHT / 2)
-                reward += (SCREEN_HEIGHT / 2 - abs(distance_to_gap_center)) / (SCREEN_HEIGHT / 2)
+                reward += (SCREEN_HEIGHT / 2 - distance_to_gap_center) / (SCREEN_HEIGHT / 2)
 
         obs = self._get_obs()
         info = {'score': self.score}
@@ -138,15 +167,29 @@ class FlappyBirdEnv(gym.Env):
                 pygame.quit()
                 exit()
 
-        self.screen.fill(WHITE)
+        # Zeichne den Hintergrund
+        self.screen.blit(self.background_img, (0, 0))
+
+        # Animations-Update für den Vogel
+        self.bird_animation_time -= self.clock.get_time() / 1000
+        if self.bird_animation_time <= 0:
+            self.bird_index = (self.bird_index + 1) % len(self.bird_imgs)
+            self.bird_animation_time = 0.1
 
         # Zeichne den Vogel
-        pygame.draw.circle(self.screen, BLACK, (60, int(self.bird_y)), 10)
+        bird_img = self.bird_imgs[self.bird_index]
+        self.screen.blit(bird_img, (60 - bird_img.get_width() // 2, int(self.bird_y) - bird_img.get_height() // 2))
 
         # Zeichne die Pipes
         for pipe in self.pipes:
-            pygame.draw.rect(self.screen, GREEN, pygame.Rect(pipe['x'], 0, PIPE_WIDTH, pipe['height']))
-            pygame.draw.rect(self.screen, GREEN, pygame.Rect(pipe['x'], pipe['height'] + PIPE_GAP, PIPE_WIDTH, SCREEN_HEIGHT - pipe['height'] - PIPE_GAP))
+            # Obere Pipe
+            flipped_pipe = pygame.transform.flip(self.pipe_img, False, True)
+            self.screen.blit(flipped_pipe, (pipe['x'], pipe['height'] - self.pipe_img.get_height()))
+            # Untere Pipe
+            self.screen.blit(self.pipe_img, (pipe['x'], pipe['height'] + PIPE_GAP))
+
+        # Zeichne den Boden
+        self.screen.blit(self.ground_img, (0, SCREEN_HEIGHT - self.ground_img.get_height()))
 
         # Zeichne den Score
         font = pygame.font.SysFont(None, 36)

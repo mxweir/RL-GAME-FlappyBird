@@ -1,11 +1,11 @@
 # play.py
+import os
 import pygame
 from flappy_bird_env import FlappyBirdEnv
 from dqn_agent import DQNAgent
 import torch
 import time
 import logging
-import os
 
 def play():
     # Konfiguriere das Logging
