@@ -45,13 +45,24 @@ def create_pipe(width, height, filename):
     image.save(filename)
     print(f"Pipe-Grafik gespeichert als {filename}")
 
+def create_ground(width, height, filename):
+    """Erstellt eine einfache Boden-Grafik als braunes Rechteck mit Gras."""
+    image = Image.new('RGBA', (width, height), (222, 184, 135, 255))  # Holzfarbe
+    draw = ImageDraw.Draw(image)
+    
+    # Zeichne Gras
+    draw.rectangle([0, 0, width, height//2], fill=(34, 139, 34, 255))  # Grasgrün
+    
+    # Optional: Füge Textur oder Muster hinzu
+    # draw.line([(0, height//2), (width, height//2)], fill=(0, 100, 0), width=2)
+    
+    image.save(filename)
+    print(f"Boden-Grafik gespeichert als {filename}")
+
 def main():
     # Parameter für die Grafiken
     screen_width = 400
     screen_height = 600
-    
-    # Hintergrund
-    create_background(screen_width, screen_height, 'assets/background.png')
     
     # Vogel-Frames
     bird_size = (34, 24)  # Größe anpassen nach Bedarf
@@ -63,6 +74,11 @@ def main():
     pipe_width = 70
     pipe_height = 500  # Hohe Pipes
     create_pipe(pipe_width, pipe_height, 'assets/pipe.png')
+    
+    # Boden
+    ground_width = screen_width
+    ground_height = 100  # Beispielhöhe, anpassen nach Bedarf
+    create_ground(ground_width, ground_height, 'assets/ground.png')
     
     print("Alle Grafiken wurden erfolgreich erstellt.")
 
