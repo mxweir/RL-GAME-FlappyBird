@@ -25,8 +25,7 @@ def play():
     model_path = 'dqn_flappy_bird.pth' if torch.cuda.is_available() else 'dqn_flappy_bird_cpu.pth'
     if os.path.exists(model_path):
         try:
-            agent.policy_net.load_state_dict(torch.load(model_path, map_location=device))
-            agent.target_net.load_state_dict(agent.policy_net.state_dict())
+            agent.load_model(model_path)
             logger.info(f"Modell erfolgreich geladen von {model_path}")
         except Exception as e:
             logger.error(f"Fehler beim Laden des Modells: {e}")
@@ -38,8 +37,6 @@ def play():
     agent.policy_net.eval()  # Setze das Netzwerk in den Evaluierungsmodus
 
     # Setze Epsilon auf 0, um keine Exploration durchzuführen
-    agent.epsilon_initial = 0.0
-    agent.epsilon_end = 0.0
     agent.epsilon = 0.0
 
     num_episodes = 5  # Anzahl der Spiele, die gespielt werden sollen

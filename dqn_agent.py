@@ -2,129 +2,182 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import torch.nn.functional as F
 import random
 import numpy as np
-from collections import deque
+from collections import namedtuple
+import math
 
-class DuelingDQN(nn.Module):
+# Hyperparameter
+LR = 1e-5  # Weiter gesenkte Lernrate
+GAMMA = 0.99
+BATCH_SIZE = 32  # Kleinere Batch-Größe
+MEMORY_SIZE = 100000
+TARGET_UPDATE = 1000
+EPS_START = 1.0
+EPS_END = 0.01
+EPS_DECAY = 1000
+CLIP_GRADIENT = 0.5  # Kleinere Clip-Werte zur Stabilisierung
+ALPHA = 0.6  # Prioritätseinstellung für PER
+BETA_START = 0.4
+BETA_FRAMES = 100000  # Anzahl der Frames, über die Beta annealed wird
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+Transition = namedtuple('Transition',
+                        ('state', 'action', 'reward', 'next_state', 'done'))
+
+class PrioritizedReplayBuffer:
+    def __init__(self, capacity, alpha=ALPHA):
+        self.capacity = capacity
+        self.alpha = alpha
+        self.buffer = []
+        self.pos = 0
+        self.priorities = np.zeros((capacity,), dtype=np.float32)
+    
+    def push(self, *args):
+        max_priority = self.priorities.max() if self.buffer else 1.0
+        if len(self.buffer) < self.capacity:
+            self.buffer.append(Transition(*args))
+        else:
+            self.buffer[self.pos] = Transition(*args)
+        self.priorities[self.pos] = max_priority
+        self.pos = (self.pos + 1) % self.capacity
+    
+    def sample(self, batch_size, beta=0.4):
+        if len(self.buffer) == self.capacity:
+            priorities = self.priorities
+        else:
+            priorities = self.priorities[:self.pos]
+        
+        probs = priorities ** self.alpha
+        probs /= probs.sum()
+        
+        indices = np.random.choice(len(self.buffer), batch_size, p=probs)
+        samples = [self.buffer[idx] for idx in indices]
+        
+        total = len(self.buffer)
+        weights = (total * probs[indices]) ** (-beta)
+        weights /= weights.max()
+        weights = np.array(weights, dtype=np.float32)
+        
+        batch = Transition(*zip(*samples))
+        return batch, indices, torch.FloatTensor(weights).unsqueeze(1).to(device)
+    
+    def update_priorities(self, batch_indices, batch_priorities):
+        for idx, priority in zip(batch_indices, batch_priorities):
+            self.priorities[idx] = priority
+
+    def __len__(self):
+        return len(self.buffer)
+
+class DQNNetwork(nn.Module):
     def __init__(self, input_dim, output_dim):
-        super(DuelingDQN, self).__init__()
-        self.fc1 = nn.Linear(input_dim, 256)
-        self.fc2 = nn.Linear(256, 256)
-        
-        # Wert-Stream
-        self.value_fc = nn.Linear(256, 128)
-        self.value = nn.Linear(128, 1)
-        
-        # Vorteil-Stream
-        self.advantage_fc = nn.Linear(256, 128)
-        self.advantage = nn.Linear(128, output_dim)
-
+        super(DQNNetwork, self).__init__()
+        self.fc1 = nn.Linear(input_dim, 256)  # Erhöhte Neuronenanzahl
+        self.fc2 = nn.Linear(256, 256)        # Erhöhte Neuronenanzahl
+        self.fc3 = nn.Linear(256, 256)        # Weitere Schicht
+        self.fc_value = nn.Linear(256, 1)
+        self.fc_advantage = nn.Linear(256, output_dim)
+    
     def forward(self, x):
-        x = torch.relu(self.fc1(x))
-        x = torch.relu(self.fc2(x))
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = F.relu(self.fc3(x))
         
-        value = torch.relu(self.value_fc(x))
-        value = self.value(value)
+        value = self.fc_value(x)
+        advantage = self.fc_advantage(x)
         
-        advantage = torch.relu(self.advantage_fc(x))
-        advantage = self.advantage(advantage)
-        
-        # Kombiniere Wert und Vorteil
-        q_vals = value + advantage - advantage.mean(dim=1, keepdim=True)
+        q_vals = value + advantage - advantage.mean()
         return q_vals
 
 class DQNAgent:
-    def __init__(self, state_dim, action_dim, lr=1e-4, gamma=0.99, epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=2000):
+    def __init__(self, state_dim, action_dim):
         self.state_dim = state_dim
         self.action_dim = action_dim
-
-        self.gamma = gamma
-
-        self.epsilon = epsilon_start
-        self.epsilon_initial = epsilon_start
-        self.epsilon_end = epsilon_end
-        self.epsilon_decay = epsilon_decay
-
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-        self.policy_net = DuelingDQN(state_dim, action_dim).to(self.device)
-        self.target_net = DuelingDQN(state_dim, action_dim).to(self.device)
+        
+        self.policy_net = DQNNetwork(state_dim, action_dim).to(device)
+        self.target_net = DQNNetwork(state_dim, action_dim).to(device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
-
-        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=lr)
-        self.criteria = nn.SmoothL1Loss()  # Huber Loss
-
-        self.memory = deque(maxlen=10000)
-        self.batch_size = 64
+        
+        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=LR)
+        self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=10000, gamma=0.5)
+        self.memory = PrioritizedReplayBuffer(MEMORY_SIZE, alpha=ALPHA)
         self.steps_done = 0
-        self.update_target_steps = 1000
-
-        self.use_double_dqn = True
-
+        
+        self.epsilon = EPS_START
+        self.epsilon_decay = EPS_DECAY
+        self.epsilon_end = EPS_END
+        
+        self.target_update_steps = TARGET_UPDATE
+        self.loss_fn = nn.MSELoss()
+        
+        self.beta_start = BETA_START
+        self.beta_frames = BETA_FRAMES
+    
     def select_action(self, state):
         self.steps_done += 1
-        epsilon = self.epsilon_end + (self.epsilon_initial - self.epsilon_end) * \
-                  np.exp(-1. * self.steps_done / self.epsilon_decay)
-        self.epsilon = epsilon
-
+        self.epsilon = self.epsilon_end + (EPS_START - self.epsilon_end) * \
+            math.exp(-1. * self.steps_done / self.epsilon_decay)
+        
         if random.random() < self.epsilon:
             return random.randrange(self.action_dim)
         else:
             with torch.no_grad():
-                state = torch.FloatTensor(state).unsqueeze(0).to(self.device)
+                state = torch.FloatTensor(state).unsqueeze(0).to(device)
                 q_values = self.policy_net(state)
-                return q_values.max(1)[1].item()
-
+                return q_values.argmax().item()
+    
     def store_transition(self, state, action, reward, next_state, done):
-        self.memory.append((state, action, reward, next_state, done))
-
-    def sample_memory(self):
-        batch = random.sample(self.memory, self.batch_size)
-        states, actions, rewards, next_states, dones = zip(*batch)
-        return np.array(states), actions, rewards, np.array(next_states), dones
-
+        self.memory.push(state, action, reward, next_state, done)
+    
     def update(self):
-        if len(self.memory) < self.batch_size:
+        if len(self.memory) < BATCH_SIZE:
             return None
-
-        states, actions, rewards, next_states, dones = self.sample_memory()
-
-        states = torch.FloatTensor(states).to(self.device)
-        actions = torch.LongTensor(actions).unsqueeze(1).to(self.device)
-        rewards = torch.FloatTensor(rewards).unsqueeze(1).to(self.device)
-        next_states = torch.FloatTensor(next_states).to(self.device)
-        dones = torch.FloatTensor(dones).unsqueeze(1).to(self.device)
-
+        
+        beta = min(1.0, self.beta_start + self.steps_done * (1.0 - self.beta_start) / self.beta_frames)
+        batch, indices, weights = self.memory.sample(BATCH_SIZE, beta=beta)
+        
+        state_batch = torch.FloatTensor(np.array(batch.state)).to(device)
+        action_batch = torch.LongTensor(batch.action).unsqueeze(1).to(device)
+        reward_batch = torch.FloatTensor(batch.reward).unsqueeze(1).to(device)
+        next_state_batch = torch.FloatTensor(np.array(batch.next_state)).to(device)
+        done_batch = torch.FloatTensor(batch.done).unsqueeze(1).to(device)
+        
         # Aktuelle Q-Werte
-        q_values = self.policy_net(states).gather(1, actions)
-
+        current_q = self.policy_net(state_batch).gather(1, action_batch)
+        
+        # Double DQN: Wählt Aktion basierend auf policy_net, Q-Werte basierend auf target_net
+        next_actions = self.policy_net(next_state_batch).argmax(1, keepdim=True)
+        next_q = self.target_net(next_state_batch).gather(1, next_actions).detach()
+        
         # Ziel Q-Werte
-        with torch.no_grad():
-            if self.use_double_dqn:
-                # Double DQN: Verwende das Policy-Netzwerk, um die besten Aktionen zu finden
-                next_actions = self.policy_net(next_states).max(1)[1].unsqueeze(1)
-                # Verwende das Ziel-Netzwerk, um die Q-Werte dieser Aktionen zu berechnen
-                next_q_values = self.target_net(next_states).gather(1, next_actions)
-            else:
-                # Standard DQN
-                next_q_values = self.target_net(next_states).max(1)[0].unsqueeze(1)
-
-            target_q_values = rewards + self.gamma * next_q_values * (1 - dones)
-
+        target_q = reward_batch + (1 - done_batch) * GAMMA * next_q
+        
         # Verlust berechnen
-        loss = self.criteria(q_values, target_q_values)
-
+        loss = (self.loss_fn(current_q, target_q) * weights).mean()
+        
         # Backpropagation
         self.optimizer.zero_grad()
         loss.backward()
         # Gradient Clipping
-        torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), 1.0)
+        torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), CLIP_GRADIENT)
         self.optimizer.step()
-
-        # Zielnetzwerk aktualisieren
-        if self.steps_done % self.update_target_steps == 0:
-            self.target_net.load_state_dict(self.policy_net.state_dict())
-
-        return loss.item()  # Rückgabe des Verlusts für Logging
+        self.scheduler.step()  # Aktualisiere den Scheduler
+        
+        # Update Prioritäten
+        priorities = (current_q - target_q).abs().detach().cpu().numpy() + 1e-6
+        self.memory.update_priorities(indices, priorities.flatten())
+        
+        return loss.item()
+    
+    def update_target_network(self):
+        self.target_net.load_state_dict(self.policy_net.state_dict())
+    
+    def save_model(self, path):
+        torch.save(self.policy_net.state_dict(), path)
+    
+    def load_model(self, path):
+        self.policy_net.load_state_dict(torch.load(path, map_location=device))
+        self.target_net.load_state_dict(self.policy_net.state_dict())

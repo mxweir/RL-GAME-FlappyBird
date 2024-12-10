@@ -1,13 +1,10 @@
 # flappy_bird_env.py
+import os
 import pygame
 import gym
 from gym import spaces
 import numpy as np
 import random
-import time
-
-# Initialisiere pygame
-pygame.init()
 
 # Bildschirmgröße
 SCREEN_WIDTH = 400
@@ -34,9 +31,20 @@ class FlappyBirdEnv(gym.Env):
     def __init__(self, render_mode=False):
         super(FlappyBirdEnv, self).__init__()
         self.render_mode = render_mode
+
+        if not self.render_mode:
+            # Setze den SDL_VIDEODRIVER auf 'dummy', um einen versteckten Video-Modus zu verwenden
+            os.environ["SDL_VIDEODRIVER"] = "dummy"
+
+        pygame.init()
+
         if self.render_mode:
             self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
             pygame.display.set_caption('Flappy Bird DQN')
+        else:
+            # Erstelle einen kleinen versteckten Bildschirm, um das Laden von Grafiken zu ermöglichen
+            self.screen = pygame.display.set_mode((1, 1))
+        
         self.clock = pygame.time.Clock()
 
         # Aktionen: 0 = nichts tun, 1 = springen
@@ -49,13 +57,13 @@ class FlappyBirdEnv(gym.Env):
             dtype=np.float32
         )
 
-        # Lade Grafiken
+        # Lade alle Grafiken
         self.load_graphics()
 
         self.reset()
 
     def load_graphics(self):
-        # Pfad zu den Grafiken
+        """Lädt alle benötigten Grafiken."""
         try:
             self.background_img = pygame.image.load('assets/background.png').convert()
             self.background_img = pygame.transform.scale(self.background_img, (SCREEN_WIDTH, SCREEN_HEIGHT))
@@ -75,9 +83,11 @@ class FlappyBirdEnv(gym.Env):
             self.ground_img = pygame.transform.scale(self.ground_img, (SCREEN_WIDTH, 100))  # Beispielgröße
         except pygame.error as e:
             print(f"Fehler beim Laden der Grafiken: {e}")
+            pygame.quit()
             exit()
 
     def reset(self):
+        """Setzt die Umgebung zurück."""
         self.bird_y = SCREEN_HEIGHT / 2
         self.bird_velocity = 0.0
         self.pipes = []
@@ -92,6 +102,7 @@ class FlappyBirdEnv(gym.Env):
         return self._get_obs()
 
     def step(self, action):
+        """Führt einen Schritt in der Umgebung aus."""
         if action == 1:
             self.bird_velocity = JUMP_STRENGTH
 
@@ -119,28 +130,29 @@ class FlappyBirdEnv(gym.Env):
         # Kollision mit Boden oder Decke
         if self.bird_y <= 0 or self.bird_y >= SCREEN_HEIGHT - self.ground_img.get_height():
             self.done = True
-            reward = -10  # Bestrafung bei Tod
+            reward = -15  # Angepasste Bestrafung bei Tod
 
         # Kollision mit Pipes und Scoring
         for pipe in self.pipes:
-            # Überprüfe Kollision mit der Pipe
+            # Erstelle Rechtecke für Kollisionserkennung
             bird_rect = pygame.Rect(60 - 10, int(self.bird_y) - 10, 20, 20)  # Annahme: Vogelgröße 20x20
             top_pipe_rect = pygame.Rect(pipe['x'], pipe['height'] - self.pipe_img.get_height(), PIPE_WIDTH, self.pipe_img.get_height())
             bottom_pipe_rect = pygame.Rect(pipe['x'], pipe['height'] + PIPE_GAP, PIPE_WIDTH, self.pipe_img.get_height())
 
+            # Kollision überprüfen
             if bird_rect.colliderect(top_pipe_rect) or bird_rect.colliderect(bottom_pipe_rect):
                 self.done = True
-                reward = -10  # Bestrafung bei Kollision
+                reward = -15  # Angepasste Bestrafung bei Kollision
 
             # Überprüfe, ob Pipe erfolgreich passiert wurde
             if not pipe['passed'] and pipe['x'] + PIPE_WIDTH < 60:
                 pipe['passed'] = True
                 self.score += 1
-                reward += 10  # Belohnung für das Passieren einer Pipe
+                reward += 1  # Angepasste Belohnung für das Passieren einer Pipe
 
         if not self.done:
             # Kleine Belohnung für jedes Überleben
-            reward += 1
+            reward += 0.1  # Angepasste Belohnung
 
             # Zusätzliche Belohnung basierend auf der Nähe zur Mitte des Pipe-Gaps
             next_pipe = self.get_next_pipe()
@@ -159,6 +171,7 @@ class FlappyBirdEnv(gym.Env):
         return obs, reward, self.done, info
 
     def render(self, mode='human'):
+        """Render-Funktion der Umgebung."""
         if not self.render_mode:
             return
 
@@ -189,7 +202,7 @@ class FlappyBirdEnv(gym.Env):
             self.screen.blit(self.pipe_img, (pipe['x'], pipe['height'] + PIPE_GAP))
 
         # Zeichne den Boden
-        self.screen.blit(self.ground_img, (0, SCREEN_HEIGHT - self.ground_img.get_height()))
+        self.screen.blit(self.ground_img, (0, SCREEN_HEIGHT - self.ground_img.get_height()))  # Korrigierte Position
 
         # Zeichne den Score
         font = pygame.font.SysFont(None, 36)
@@ -200,11 +213,12 @@ class FlappyBirdEnv(gym.Env):
         self.clock.tick(60)
 
     def close(self):
+        """Schließt die Umgebung."""
         if self.render_mode:
             pygame.quit()
 
     def get_next_pipe(self):
-        # Finde die nächste Pipe
+        """Findet die nächste Pipe."""
         next_pipe = None
         for pipe in self.pipes:
             if pipe['x'] + PIPE_WIDTH > 60:
@@ -213,6 +227,7 @@ class FlappyBirdEnv(gym.Env):
         return next_pipe
 
     def _get_obs(self):
+        """Erstellt die Beobachtungsdaten."""
         # Finde die nächste Pipe
         next_pipe = self.get_next_pipe()
 
